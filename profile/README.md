@@ -2,12 +2,24 @@
 
 **Update live Roblox games without restarting their servers.**
 
-TypeTorch is a roblox-ts framework and toolchain. You push code, CI builds it, and every live server hot-swaps to the new
-version in a few seconds. Players stay in the game, their data stays loaded, and nobody gets kicked to a new server.
-One place serves any number of branches (`prod`, `dev`, `feature-x`), so you can test a branch in a private server of
-the real game instead of keeping a separate testing place.
+TypeTorch is a roblox-ts framework and toolchain. You run `typetorch deploy`, and every live server hot-swaps to the new
+version in a few seconds. Players stay in the game and nobody gets kicked to a new server. One place serves any number
+of branches (`prod`, `dev`, `feature-x`), so you can test a branch in a private server of the real game instead of
+keeping a separate testing place.
 
-> **Status: early (0.1.x).** The core loop works on live Roblox servers today. APIs will change.
+> **Status: early.** The core loop works on live Roblox servers today. APIs will change. The packages are not on npm
+> yet (planned); today they come from these repositories.
+
+## Get started
+
+**[→ Read the docs: github.com/typetorch/docs](https://github.com/typetorch/docs)**
+
+- **[Fresh setup](https://github.com/typetorch/docs/blob/main/getting-started/fresh-setup.md):** a new game from the
+  starter template to a live hot-swap.
+- **[Migrate an existing game](https://github.com/typetorch/docs/blob/main/getting-started/migrate.md):** services,
+  swap safety, networking, data and UI, with before/after code.
+- **[Agent playbook](https://github.com/typetorch/docs/blob/main/agents/AGENTS.md):** tell your coding agent "migrate
+  this project to typetorch". For Claude Code: `/plugin marketplace add typetorch/claude-plugin`.
 
 ## Why
 
@@ -20,37 +32,45 @@ TypeTorch treats game code like a deployable artifact instead of part of the pla
 - **Fast feedback.** From `typetorch deploy` to players running the new build takes about 7–9 seconds.
 - **Instant rollback.** Going back to an earlier build re-uses an already-approved upload and takes about 1–2 seconds.
 - **Branches in the real game.** Open a private server on any branch with `/tt new <branch>`.
-- **Studio becomes optional for code.** Build, test and deploy from the command line or CI, which also suits AI
-  agents.
+- **Studio becomes optional for code.** Build, test and deploy from the command line, which also suits AI agents.
+  (A CI GitHub Action is planned.)
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    A[git push / typetorch deploy] --> B[build: roblox-ts → payload.rbxm]
+    A[typetorch deploy] --> B[build: roblox-ts → payload.rbxm]
     B --> C[upload as a private Model asset<br/>Open Cloud, moderation check]
-    C --> D[deploy message<br/>MessagingService]
-    D --> E[live servers: kernel loads the payload]
-    E --> F[old version stops, new version starts<br/>server + clients, no restart]
+    C --> D[you approve<br/>prod: signed]
+    D --> E[deploy message<br/>MessagingService]
+    E --> F[live servers: kernel loads the payload]
+    F --> G[old version stops, new version starts<br/>server + clients, no restart]
 ```
 
 1. **Kernel.** A small loader is the only TypeTorch code baked into the place, so it's the only part that needs a
    server restart to change. It chooses each server's branch: public servers run `prod`, and private servers run
    whatever branch they were opened on.
 2. **Artifacts.** Each build of your game becomes one immutable artifact, identified by its git commit
-   (`prod-a1b2c3d`). It is uploaded as a private Model asset that only your experience can load.
+   (`a1b2c3d-9f8e7d`). It is uploaded as a private Model asset that only your experience can load.
 3. **Swaps.** On a deploy message (or a periodic check), each server loads the new artifact next to the running one,
-   stops the old version (every connection, thread and instance it created is cleaned up), starts the new one, and
-   tells clients to do the same. A version that fails to start is rolled back automatically.
-4. **Framework.** Your game code uses modules (`@Service` / `@Controller`) with constructor injection, lifecycle hooks
-   and a trove for cleanup. Type-checked networking guards every remote call. The framework ships inside every
-   artifact, so framework fixes also hot-swap.
-5. **Dev menu.** Developers get an in-game menu with:
-   - the running artifact and the server's status;
-   - logs and network stats;
+   stops the old version (every thread and connection it started is stopped, and everything in its troves is cleaned
+   up), starts the new one, and tells clients to do the same. A version that fails to start is rolled back
+   automatically.
+4. **Prod is signed.** Prod releases are approved at your terminal and signed with your own keys. Prod servers
+   (kernel 0.3) accept only signed updates, so code running inside the game can't push them a new build.
+5. **Framework.** Your game code uses modules (`@Service` / `@Controller`) with constructor injection, lifecycle hooks
+   and a trove for cleanup. Type-checked networking guards every remote call. Plain data you choose survives swaps
+   (`persist`); player data stays in the data library you already use, kept outside the swapped code. The framework
+   ships inside every artifact, so framework fixes also hot-swap.
+6. **Hot assets.** Builders mark models and UI templates in the place, and running servers pick up new versions
+   without a restart.
+7. **Dev menu.** Developers get an in-game menu with:
+   - the running artifact, its signatures and the server's status;
+   - modules, state and hot assets;
+   - logs, a network packet inspector and stats;
    - a client and server explorer;
-   - branch switching and rollback;
-   - a Claude prompt that edits and redeploys a dev branch.
+   - branch switching, rollback and admin tools;
+   - a Claude chat that acts on a dev server or edits and redeploys a dev branch, with your approval.
 
    Production servers are read-only.
 
@@ -58,12 +78,14 @@ flowchart LR
 
 | Repository | Package | What it is |
 |---|---|---|
-| [**kernel**](https://github.com/typetorch/kernel) | `@typetorch/kernel` | The Luau loader baked into the place: boot, branch selection, artifact loading, hot swaps with automatic rollback, the stable remotes and the `/tt` chat commands |
-| [**framework**](https://github.com/typetorch/framework) | `@typetorch/framework` | The roblox-ts framework your game is written with: modules with dependency injection and lifecycle hooks, troves, guarded networking, UI helpers and the in-game dev menu. Ships inside every artifact |
-| [**cli**](https://github.com/typetorch/cli) | `@typetorch/cli` | The `typetorch` command (Bun): `build`, `deploy`, `rollback`, `deployments`, `branch ls`, `kernel deploy`, `doctor` |
-| [**transformer**](https://github.com/typetorch/transformer) | `@typetorch/transformer` | The roblox-ts compiler plugin that generates runtime type guards and dependency-injection metadata from your types. A stripped-down fork of [rbxts-transformer-flamework](https://github.com/rbxts-flamework/transformer) (MIT) |
-| [**template**](https://github.com/typetorch/template) | | A starter game showing every feature: services, controllers, networking, state that survives swaps, and the dev menu |
-| [**dev-server**](https://github.com/typetorch/dev-server) | `@typetorch/dev-server` | `remote-claude`: a local server behind a temporary Cloudflare tunnel that lets allowlisted developers prompt Claude Code from inside a dev-branch game server. Claude edits the branch, then the server commits and redeploys it |
+| [**docs**](https://github.com/typetorch/docs) | | Getting started, migration, guides and the agent playbook |
+| [**kernel**](https://github.com/typetorch/kernel) | `@typetorch/kernel` | The Luau loader baked into the place: boot, branch selection, signature checks, artifact loading, hot swaps with automatic rollback, the stable remotes and the `/tt` chat commands |
+| [**framework**](https://github.com/typetorch/framework) | `@typetorch/framework` | The roblox-ts framework your game is written with: modules with dependency injection and lifecycle hooks, troves, guarded networking, hot assets, UI helpers and the in-game dev menu. Ships inside every artifact |
+| [**cli**](https://github.com/typetorch/cli) | `@typetorch/cli` | The `typetorch` command (Node 20+ or Bun): `build`, `deploy`, `approve`, `promote`, `rollback`, `pin`, `deployments`, `keys`, `assets`, `kernel deploy`, `doctor` |
+| [**transformer**](https://github.com/typetorch/transformer) | `@typetorch/transformer` | The roblox-ts compiler plugin that generates runtime type guards and dependency-injection metadata from your types. A stripped-down fork of [rbxts-transformer-flamework](https://github.com/rbxts-flamework/transformer) (MIT); TypeTorch games don't need Flamework |
+| [**template**](https://github.com/typetorch/template) | | A starter game (Target Rush) showing every feature: services, controllers, networking, state that survives swaps, the runtime API and the dev menu |
+| [**dev-server**](https://github.com/typetorch/dev-server) | `@typetorch/dev-server` | `remote-claude`: a local server behind a temporary Cloudflare tunnel that lets allowlisted developers chat with Claude Code from inside a dev-branch game server. Claude acts on the server or edits the branch; you approve each deploy |
+| [**claude-plugin**](https://github.com/typetorch/claude-plugin) | | A Claude Code plugin marketplace with the `typetorch-migrate` skill |
 
 ## A taste
 
@@ -96,12 +118,12 @@ typetorch deployments              # every deploy with its git commit
 
 ## Principles
 
-- **Everything is identified by git.** Artifact ids, asset descriptions and deployment logs all carry the commit, so
+- **Everything is identified by git.** Artifact ids, payload attributes and deployment logs all carry the commit, so
   any build on any server can be traced back to source.
-- **Production is read-only.** Public servers always run `prod`, editing tools only work on dev-channel branches, and
-  every permission is checked on the server.
-- **Clean up everything.** Each module's trove owns what it creates, and a swap leaves nothing behind (tested over
-  180 consecutive swaps).
+- **Production is locked down.** Public servers run `prod` and take only updates you signed, editing tools only work
+  on dev-channel branches, and every permission is checked on the server.
+- **Clean up everything.** Each module's trove owns what it creates, and a swap stops every thread and connection the
+  old version started (tested over 180 consecutive swaps).
 
 ## License
 
