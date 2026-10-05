@@ -14,6 +14,17 @@ keeping a separate testing place.
 
 **[→ Read the docs: github.com/typetorch/docs](https://github.com/typetorch/docs)**
 
+A new game starts from the template. Every package comes from npm, so a clone builds on its own (needs
+[Bun](https://bun.sh) and [Rokit](https://github.com/rojo-rbx/rokit)):
+
+```sh
+git clone https://github.com/typetorch/template my-game
+cd my-game
+bun install
+rokit install
+bun run typetorch build
+```
+
 - **[Fresh setup](https://github.com/typetorch/docs/blob/main/getting-started/fresh-setup.md):** a new game from the
   starter template to a live hot-swap.
 - **[Migrate an existing game](https://github.com/typetorch/docs/blob/main/getting-started/migrate.md):** services,
