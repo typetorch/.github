@@ -7,8 +7,8 @@ version in a few seconds. Players stay in the game and nobody gets kicked to a n
 of branches (`prod`, `dev`, `feature-x`), so you can test a branch in a private server of the real game instead of
 keeping a separate testing place.
 
-> **Status: early.** The core loop works on live Roblox servers today. APIs will change. The packages are not on npm
-> yet (planned); today they come from these repositories.
+> **Status: early.** The core loop works on live Roblox servers today. APIs will change. The packages are on npm
+> (`@typetorch/framework`, `@typetorch/cli`, ...).
 
 ## Get started
 
