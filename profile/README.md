@@ -65,7 +65,8 @@ flowchart LR
 3. **Swaps.** On a deploy message (or a periodic check), each server loads the new artifact next to the running one,
    stops the old version (every thread and connection it started is stopped, and everything in its troves is cleaned
    up), starts the new one, and tells clients to do the same. A version that fails to start is rolled back
-   automatically.
+   automatically. Prod builds boot in a headless cloud test before they are published, and a build that fails on many
+   servers is rolled back across the branch by itself.
 4. **Prod is signed.** Prod releases are approved at your terminal and signed with your own keys. Prod servers
    (kernel 0.3) accept only signed updates, so code running inside the game can't push them a new build.
 5. **Framework.** Your game code uses modules (`@Service` / `@Controller`) with constructor injection, lifecycle hooks
@@ -79,10 +80,13 @@ flowchart LR
    - modules, state and hot assets;
    - logs, a network packet inspector and stats;
    - a client and server explorer;
-   - branch switching, rollback and admin tools;
+   - branch switching, rollback and owner tools;
    - a Claude chat that acts on a dev server or edits and redeploys a dev branch, with your approval.
 
    Production servers are read-only.
+8. **Live servers and analytics (optional, self-hosted).** The kernel reports every server's status, deploy results
+   and alerts (`typetorch servers`, `report`, `alerts`, webhooks). Your own analytics logs sessions, funnels,
+   experiments and new players' first sessions, on your server or Cloudflare Basin.
 
 ## Repositories
 
@@ -91,10 +95,11 @@ flowchart LR
 | [**docs**](https://github.com/typetorch/docs) | | Getting started, migration, guides and the agent playbook |
 | [**kernel**](https://github.com/typetorch/kernel) | `@typetorch/kernel` | The Luau loader baked into the place: boot, branch selection, signature checks, artifact loading, hot swaps with automatic rollback, the stable remotes and the `/tt` chat commands |
 | [**framework**](https://github.com/typetorch/framework) | `@typetorch/framework` | The roblox-ts framework your game is written with: modules with dependency injection and lifecycle hooks, troves, guarded networking, hot assets, UI helpers and the in-game dev menu. Ships inside every artifact |
-| [**cli**](https://github.com/typetorch/cli) | `@typetorch/cli` | The `typetorch` command (Node 20+ or Bun): `build`, `deploy`, `approve`, `promote`, `rollback`, `pin`, `deployments`, `keys`, `assets`, `kernel deploy`, `doctor` |
+| [**cli**](https://github.com/typetorch/cli) | `@typetorch/cli` | The `typetorch` command (Node 20+ or Bun): `build`, `deploy`, `test`, `approve`, `promote`, `rollback`, `pin`, `deployments`, `servers`, `report`, `alerts`, `keys`, `assets`, `kernel deploy`, `doctor`, `update` |
 | [**transformer**](https://github.com/typetorch/transformer) | `@typetorch/transformer` | The roblox-ts compiler plugin that generates runtime type guards and dependency-injection metadata from your types. A stripped-down fork of [rbxts-transformer-flamework](https://github.com/rbxts-flamework/transformer) (MIT); TypeTorch games don't need Flamework |
 | [**template**](https://github.com/typetorch/template) | | A starter game (Target Rush) showing every feature: services, controllers, networking, state that survives swaps, the runtime API and the dev menu |
 | [**dev-server**](https://github.com/typetorch/dev-server) | `@typetorch/dev-server` | `remote-claude`: a local server behind a temporary Cloudflare tunnel that lets allowlisted developers chat with Claude Code from inside a dev-branch game server. Claude acts on the server or edits the branch; you approve each deploy |
+| [**analytics**](https://github.com/typetorch/analytics) | | The analytics server (DuckDB, for a small VPS), the live fleet API (SQLite) and the analytics queries (not on npm yet) |
 | [**claude-plugin**](https://github.com/typetorch/claude-plugin) | | A Claude Code plugin marketplace with the `typetorch-migrate` skill |
 
 ## A taste
@@ -134,6 +139,8 @@ typetorch deployments              # every deploy with its git commit
   on dev-channel branches, and every permission is checked on the server.
 - **Clean up everything.** Each module's trove owns what it creates, and a swap stops every thread and connection the
   old version started (tested over 180 consecutive swaps).
+- **No GitHub Actions.** TypeTorch never uses hosted CI (a common supply-chain risk). Builds, tests and deploys run on
+  your own machine, where your keys stay.
 
 ## License
 
