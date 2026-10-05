@@ -44,7 +44,6 @@ TypeTorch treats game code like a deployable artifact instead of part of the pla
 - **Instant rollback.** Going back to an earlier build re-uses an already-approved upload and takes about 1–2 seconds.
 - **Branches in the real game.** Open a private server on any branch with `/tt new <branch>`.
 - **Studio becomes optional for code.** Build, test and deploy from the command line, which also suits AI agents.
-  (A CI GitHub Action is planned.)
 
 ## How it works
 
