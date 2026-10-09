@@ -3,9 +3,12 @@
 **Update live Roblox games without restarting their servers.**
 
 TypeTorch is a roblox-ts framework and toolchain. You run `typetorch deploy`, and every live server hot-swaps to the new
-version in a few seconds. Players stay in the game and nobody gets kicked to a new server. One place serves any number
-of branches (`prod`, `dev`, `feature-x`), so you can test a branch in a private server of the real game instead of
-keeping a separate testing place.
+version in a few seconds. Players stay in the game and nobody gets kicked to a new server. The same goes for assets:
+builders edit models and UI templates in the place, run `typetorch assets sync`, and running servers pick up the new
+versions live. One place serves any number of branches (`prod`, `dev`, `feature-x`), so you can test a branch in a
+private server of the real game instead of keeping a separate testing place. An optional self-hosted backend shows you
+the live servers, each deploy's results, errors, performance and your own analytics, and lets you debug one live server
+from the browser.
 
 > **Status: early.** The core loop works on live Roblox servers today. APIs will change. The packages are on npm
 > (`@typetorch/framework`, `@typetorch/cli`, ...).
@@ -38,11 +41,20 @@ Shipping an update on Roblox today means restarting servers. You either kick eve
 wait for "migrate to latest update" to drain old servers. Each restart costs players, progress and momentum, so teams
 batch changes and ship less often. Testing usually happens in a second "testing place" that drifts from the real one.
 
-TypeTorch treats game code like a deployable artifact instead of part of the place file:
+Analytics is the other half of shipping often: Roblox's own dashboards lag by hours and tell you little about one
+build, one experiment or one player's first session.
+
+TypeTorch treats game code and game assets like deployable artifacts instead of parts of the place file:
 - **No restart for code updates.** Servers load the new version in place.
+- **No restart for asset updates.** Models and UI templates marked in the place are versioned, uploaded and swapped
+  live too, and a rollback brings the older versions back.
 - **Fast feedback.** From `typetorch deploy` to players running the new build takes about 7–9 seconds.
 - **Instant rollback.** Going back to an earlier build re-uses an already-approved upload and takes about 1–2 seconds.
+- **Safe deploys.** A cloud test gates every prod publish, each server rolls a failing build back on its own, and a
+  build that fails on too many servers is rolled back across the branch.
 - **Branches in the real game.** Open a private server on any branch with `/tt new <branch>`.
+- **Your own analytics.** Sessions, funnels, experiments, revenue, performance and first-session recordings, on your
+  own server, with every row tied to the build that produced it.
 - **Studio becomes optional for code.** Build, test and deploy from the command line, which also suits AI agents.
 
 ## How it works
@@ -51,10 +63,12 @@ TypeTorch treats game code like a deployable artifact instead of part of the pla
 flowchart LR
     A[typetorch deploy] --> B[build: roblox-ts → payload.rbxm]
     B --> C[upload as a private Model asset<br/>Open Cloud, moderation check]
-    C --> D[you approve<br/>prod: signed]
+    C --> T[cloud test<br/>prod: always]
+    T --> D[you approve<br/>prod: signed]
     D --> E[deploy message<br/>MessagingService]
     E --> F[live servers: kernel loads the payload]
     F --> G[old version stops, new version starts<br/>server + clients, no restart]
+    G --> R[reports to the backend<br/>bad build: automatic rollback]
 ```
 
 1. **Kernel.** A small loader is the only TypeTorch code baked into the place, so it's the only part that needs a
@@ -73,8 +87,12 @@ flowchart LR
    and a trove for cleanup. Type-checked networking guards every remote call. Plain data you choose survives swaps
    (`persist`); player data stays in the data library you already use, kept outside the swapped code. The framework
    ships inside every artifact, so framework fixes also hot-swap.
-6. **Hot assets.** Builders mark models and UI templates in the place, and running servers pick up new versions
-   without a restart.
+6. **Hot assets.** Builders mark models and UI templates in the place with one attribute (`TypeTorchAsset`) and
+   publish the place as usual. `typetorch assets sync` exports them from the latest published place, uploads new and
+   changed ones as versioned Model assets and writes a lockfile that every build carries as its asset manifest. On a
+   swap, servers keep the copies that already match, load the rest in parallel and tell clients; game code reads them
+   with `hotAsset("ui/shop")` and gets a `changed` callback. Assets persist across swaps, and a rollback restores the
+   older versions.
 7. **Dev menu.** Developers get an in-game menu with:
    - the running artifact, its signatures and the server's status;
    - modules, state and hot assets;
@@ -84,22 +102,34 @@ flowchart LR
    - a Claude chat that acts on a dev server or edits and redeploys a dev branch, with your approval.
 
    Production servers are read-only.
-8. **Live servers and analytics (optional, self-hosted).** The kernel reports every server's status, deploy results
-   and alerts (`typetorch servers`, `report`, `alerts`, webhooks). Your own analytics logs sessions, funnels,
-   experiments and new players' first sessions, on your server or Cloudflare Basin.
+8. **Backend (optional, self-hosted).** One server, one Docker image, two keys. It holds:
+   - the **fleet API**: every server's heartbeat (players, TPS, memory), deploy reports, alerts and a closing notice,
+     sent by the kernel itself (`typetorch servers`, `report`, `alerts`; Discord, Slack or JSON webhooks);
+   - **analytics**: the framework's `AnalyticsEngine` sends sessions, custom events, funnel steps, purchases, currency,
+     screens and zones, device and tech stats, experiments and a detailed recording of new players' first sessions.
+     Rows carry the artifact and branch, a random player id (never the UserId) and no chat or typed text. Stored in
+     DuckDB on a small VPS or in Cloudflare Basin;
+   - **error logs** from game servers, counted per minute, with names and ids already replaced;
+   - the **web explorer**: Overview, Roblox benchmarks, Retention, Funnels, Players and player timelines, Flow graphs,
+     Experiments, First session, Events, Fleet, Errors, Performance (client FPS, memory and ping; server TPS and
+     memory, at p10 to p99, with deploy marks on every chart and a before/after compare) and Settings. Sign in with
+     the admin token or with Roblox;
+   - **remote debug** (kernel 0.5): open any live server in the explorer and read its status, logs, players, module
+     state, a read-only Dex, builds, boot budget, error and network counters. The server pulls commands, nothing can
+     be changed through it, and an idle server makes no extra requests.
 
 ## Repositories
 
 | Repository | Package | What it is |
 |---|---|---|
 | [**docs**](https://github.com/typetorch/docs) | | Getting started, migration, guides and the agent playbook |
-| [**kernel**](https://github.com/typetorch/kernel) | `@typetorch/kernel` | The Luau loader baked into the place: boot, branch selection, signature checks, artifact loading, hot swaps with automatic rollback, the stable remotes and the `/tt` chat commands |
-| [**framework**](https://github.com/typetorch/framework) | `@typetorch/framework` | The roblox-ts framework your game is written with: modules with dependency injection and lifecycle hooks, troves, guarded networking, hot assets, UI helpers and the in-game dev menu. Ships inside every artifact |
-| [**cli**](https://github.com/typetorch/cli) | `@typetorch/cli` | The `typetorch` command (Node 20+ or Bun): `build`, `deploy`, `test`, `approve`, `promote`, `rollback`, `pin`, `deployments`, `servers`, `report`, `alerts`, `keys`, `assets`, `kernel deploy`, `doctor`, `update` |
+| [**kernel**](https://github.com/typetorch/kernel) | `@typetorch/kernel` | The Luau loader baked into the place: boot within a 15 s budget, branch selection, signature checks, artifact loading, hot swaps with a health window and automatic rollback, the signed settings record, cross-server messaging, the stable remotes, the `/tt` chat commands, heartbeats and reports to the backend, and the read-only remote debug poll |
+| [**framework**](https://github.com/typetorch/framework) | `@typetorch/framework` | The roblox-ts framework your game is written with: modules with dependency injection and lifecycle hooks, troves, guarded networking, state that survives swaps, hot assets, the analytics engine, UI helpers, a Flamework compatibility layer and the in-game dev menu. Ships inside every artifact |
+| [**cli**](https://github.com/typetorch/cli) | `@typetorch/cli` | The `typetorch` command (Node 20+ or Bun): `build`, `deploy`, `test`, `approve`, `promote`, `rollback`, `pin`, `deployments`, `assets sync`, `servers`, `report`, `alerts`, `backend setup`, `settings`, `access`, `keys`, `kernel deploy` and `restore`, `backup refresh`, `migrate --from flamework`, `doctor`, `update` |
 | [**transformer**](https://github.com/typetorch/transformer) | `@typetorch/transformer` | The roblox-ts compiler plugin that generates runtime type guards and dependency-injection metadata from your types. A stripped-down fork of [rbxts-transformer-flamework](https://github.com/rbxts-flamework/transformer) (MIT); TypeTorch games don't need Flamework |
 | [**template**](https://github.com/typetorch/template) | | A starter game (Target Rush) showing every feature: services, controllers, networking, state that survives swaps, the runtime API and the dev menu |
 | [**dev-server**](https://github.com/typetorch/dev-server) | `@typetorch/dev-server` | `remote-claude`: a local server behind a temporary Cloudflare tunnel that lets allowlisted developers chat with Claude Code from inside a dev-branch game server. Claude acts on the server or edits the branch; you approve each deploy |
-| [**analytics**](https://github.com/typetorch/analytics) | | The analytics server (DuckDB, for a small VPS), the live fleet API (SQLite) and the analytics queries (not on npm yet) |
+| [**backend**](https://github.com/typetorch/backend) | `@typetorch/backend` | The self-hosted backend: the fleet API (SQLite), analytics (DuckDB or Cloudflare Basin), error logs, remote debug and the web explorer, as one Docker image (not on npm yet) |
 | [**claude-plugin**](https://github.com/typetorch/claude-plugin) | | A Claude Code plugin marketplace with the `typetorch-migrate` skill |
 
 ## A taste
@@ -125,10 +155,25 @@ export class CoinService extends Module implements OnStart {
 }
 ```
 
+```ts
+// Hot assets: builders edit ui/shop in the place; servers and clients get new versions live.
+const shop = hotAsset("ui/shop");
+shop.changed(rebuild, this.trove);
+rebuild(shop.get());
+
+// Analytics: rows go to your own backend, tagged with the running build and branch.
+const analytics = new AnalyticsEngine();
+analytics.step(player, "onboarding", 3, "opened_shop");
+const variant = analytics.experiment(player, "onboarding", ["short", "long"]);
+```
+
 ```bash
 typetorch deploy --branch dev      # build, upload, swap every dev server
 typetorch rollback --branch dev    # back to the previous build in ~1–2 s
 typetorch deployments              # every deploy with its git commit
+typetorch assets sync --deploy dev # upload changed models and UI templates, then deploy
+typetorch servers --watch          # live servers from your backend
+typetorch report latest            # what every server did with the last deploy
 ```
 
 ## Principles
