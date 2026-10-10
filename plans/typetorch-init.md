@@ -7,8 +7,8 @@ a self-hosted backend if they want one, and a prompt for a coding agent to build
 replaces steps 1 to 11 of `docs/getting-started/fresh-setup.md` and the backend's Coolify and VPS sections with
 questions, actions and checks. The long guides stay as the reference each step links to.
 
-No hosted TypeTorch service is involved. Tunnels run in the user's own Cloudflare account and zone. No accounts, no
-email, no sign-ups.
+No hosted TypeTorch service is involved. No accounts, no email, no sign-ups, no API tokens for anything but
+Roblox Open Cloud: a PC gets a quick tunnel the wizard manages, a VPS gets a static address.
 
 ## 1. Shape
 
@@ -83,35 +83,39 @@ Local details: sudo available, Debian or Ubuntu, nothing listening on 80, 443 or
 
 ### Q3. How is it exposed?
 
-| Answer | Meaning |
-|---|---|
-| Cloudflare tunnel with a static hostname (recommended) | A named tunnel in the user's own Cloudflare account, a fixed `sub.their-domain` |
-| Public IPv4 and my own domain | Caddy with Let's Encrypt, the DNS A record checked against the machine's public address |
-| Quick tunnel (tests only) | `trycloudflare.com`, the URL changes on every start |
+Asked only where there is a choice. The rule: no login anywhere, nothing to sign up for, and the user never has to
+know a URL.
 
-**Cloudflare tunnel, static hostname.** Needs a domain on Cloudflare (free plan is enough) and an API token with
-Account: Cloudflare Tunnel: Edit and Zone: DNS: Edit, scoped to that zone. The wizard:
+| Where the backend runs | Exposure | Static? |
+|---|---|---|
+| A PC (Windows, macOS, Linux) | A Cloudflare quick tunnel (`trycloudflare.com`) started by the wizard's wrapper | No, and it does not matter (below) |
+| A VPS without a domain | Caddy with a certificate for `backend.<ipv4>.sslip.io` | Yes, the IPv4 is static |
+| A VPS with a domain | Caddy with Let's Encrypt, the A record checked against the machine's address | Yes |
 
-1. asks for the token, masked, with the exact token template to create in the Cloudflare dashboard;
-2. lists the zones the token can see, the user picks one and a subdomain (default `typetorch`);
-3. creates the tunnel (`POST /accounts/{id}/cfd_tunnel`, `config_src: cloudflare`), sets the ingress (the backend's
-   address, then a `http_status:404` catch-all), creates the proxied CNAME to `<tunnel-id>.cfargotunnel.com`;
-4. installs cloudflared on the machine and runs `cloudflared service install <tunnel token>`;
-5. does not store the Cloudflare API token anywhere. Teardown or rotation asks for it again. The tunnel token is kept
-   by cloudflared's own service config, not by the game's `.env`.
+A VPS user is asked one question: "do you have a domain pointed at this server?". A PC user is asked nothing.
 
-The backend then runs with `TYPETORCH_CLOUDFLARE=on` and `TYPETORCH_PUBLIC_URL=https://sub.their-domain`, bound to
-loopback behind the connector. The hostname never changes: reconnects, reboots and a reinstall with the same token
-keep it. On Coolify the connector points at Traefik on `localhost:80` and the app's domain is the hostname; this is
-the layout Coolify's own tunnel guide uses and needs one verification on a real Coolify box.
+**Quick tunnel without friction.** The tunnel URL changes on every start, so the wizard never makes the user handle
+it. It installs `typetorch backend run`, a wrapper that starts the backend and `cloudflared tunnel --url
+http://127.0.0.1:8787` together, reads the new URL from cloudflared's output, runs `backend setup --url <it>` (which
+signs the URL into the settings record and pings the servers) and prints the explorer address. Running servers
+switch within seconds; the kernel's fleet sender and the analytics engine already retry across the gap. The backend
+repo's `bun run local` does most of this today, so this is packaging. The wrapper is registered as a login task
+(scheduled task, launchd, or a systemd user unit), so a reboot brings everything back without a step.
 
-Limits that matter, from Cloudflare's docs: 1,000 tunnels per account, 200 DNS records on a free zone created after
-September 2024 (3,500 on Pro), 100 MB request bodies, a 125 s proxy read timeout. One game uses one tunnel and one
-record, so none of them is a concern for a user's own zone. The explorer's live streams must send keepalives under
-125 s.
+This works only where the prod signing keys are, which is the user's PC. Keys are never copied to a VPS, so a VPS
+never uses a quick tunnel; it has a static address and gets a static name through sslip.io or the user's domain.
 
-**Quick tunnel.** Kept only for test games with no domain. The wizard wraps the backend's `bun run local`, which
-re-runs `backend setup` on every start because the URL changes. The summary says it dies with the PC.
+The explorer on a quick tunnel keeps the admin-token login on (Roblox sign-in needs a fixed public URL). The wizard
+says the tunnel is public and relies on the 32-character token and the lockout after five failed logins. Anyone
+who wants a fixed URL on a home PC can set up a named Cloudflare tunnel by hand; the docs describe it, the installer
+never asks for a Cloudflare token.
+
+**sslip.io.** A public DNS service that answers `backend.1-2-3-4.sslip.io` with `1.2.3.4`. No account, nothing to
+create. Caddy issues the certificate. To verify before M3: Let's Encrypt rate limits for sslip.io as a shared
+registered domain, and ZeroSSL as Caddy's fallback issuer if they bite.
+
+Cloudflare limits that touch the quick tunnel: 100 MB request bodies and a 125 s proxy read timeout. Ingest bodies
+are capped at 2 MB by the backend; the explorer's live streams must send keepalives under 125 s.
 
 ### After every path
 
@@ -128,15 +132,14 @@ and explains the lockout after five failed logins.
 
 - **Linux service:** swap, ufw, Bun under `/opt/bun`, the `typetorch` service user, clone to
   `/opt/typetorch-backend`, `bun install` and the explorer build, `/etc/typetorch/backend.env` with mode 640, the
-  unit, then Caddy or cloudflared per Q3, then `GET /healthz` through the public URL. One checklist line per step.
+  unit, then Caddy for the domain or the sslip.io name per Q3, then `GET /healthz` through the public URL. One checklist line per step.
   Idempotent: a rerun skips what exists. `--teardown` reverses it.
 - **Coolify:** "Is Coolify installed?" No: run its install script, tell the user to open the panel and set the admin
   account. Then print the exact resource settings (Docker Compose, repo URL, compose location, domain) and the env
   block, wait for Enter, probe `/healthz` and both keys. Coolify is clicked by the user; the wizard prepares and
-  verifies.
-- **This PC:** install Bun if missing, clone the backend next to the game, build the explorer, write a local env
-  file, register a login task that runs the server, then Q3 (tunnel recommended; a public IPv4 on a home PC is
-  discouraged and the wizard says why).
+  verifies. Coolify needs a hostname for the app: the user's domain, or the sslip.io name.
+- **This PC:** install Bun and cloudflared if missing, clone the backend next to the game, build the explorer,
+  write a local env file, register `typetorch backend run` as a login task. No exposure question.
 
 ## 5. Agent handoff
 
@@ -149,33 +152,33 @@ do" list current.
 ## 6. Rules the wizard obeys
 
 - Secrets are masked on input, never printed, never written to `init.json` or `AGENT_PROMPT.md`.
-- Every file write is shown first. Every external action (publish, deploy, SSH, Cloudflare API) has its own y/N.
+- Every file write is shown first. Every external action (publish, deploy, SSH) has its own y/N.
 - Ctrl+C anywhere leaves a consistent state; the next `init` resumes.
-- No GitHub Actions, no hosted CI, nothing leaves the user's machine except to Roblox, their VPS and their Cloudflare
-  account.
+- No GitHub Actions, no hosted CI, nothing leaves the user's machine except to Roblox, their VPS and the tunnel.
 
 ## 7. Milestones
 
 | Milestone | Scope | Result |
 |---|---|---|
 | M1 | `tui.ts`, phases 1 to 5 and 7 | Zero to a live hot-swap with no backend and no doc reading |
-| M2 | Phase 6: skip, this PC, Coolify, with quick tunnel and static tunnel | A backend for test games and for people on Coolify |
-| M3 | Phase 6: Linux service over SSH and local, Caddy path, `--teardown` | A full self-hosted backend from one prompt |
+| M2 | Phase 6: skip, this PC with the quick-tunnel wrapper, Coolify | A backend for test games and for people on Coolify |
+| M3 | Phase 6: Linux service over SSH and local, Caddy with a domain or sslip.io, `--teardown` | A full self-hosted backend from one prompt |
 | M4 | Phase 8, repair mode, docs rewrite | fresh-setup.md becomes "run init"; AGENTS.md moves init from Planned to Today |
 
 ## 8. Known limits
 
-- Studio and the browser cannot be skipped: creating the experience, the Open Cloud key and the Cloudflare token
-  happen there. The wizard points at the exact page and verifies the result.
+- Studio and the browser cannot be skipped: creating the experience and the Open Cloud key happen there. The wizard points at the exact page and verifies the result.
 - The SSH installer owns a server. It must be idempotent and have `--teardown`, or a half-failed run leaves a VPS the
   user does not understand.
 - Password SSH works but is the slow path; the wizard steers to a key file.
+- A quick tunnel's explorer URL changes on every start, so Roblox sign-in is off there and bookmarks do not work;
+  `typetorch backend run` prints the current address.
 
 ## 9. Files
 
 In `cli/src`: `tui.ts`, `commands/init.ts` (the phases), `init/` with one file per phase
 (`preflight.ts`, `project.ts`, `roblox.ts`, `keys.ts`, `kernel.ts`, `backend.ts`, `deploy.ts`, `agent.ts`),
-`init/ssh.ts` (the session, script upload), `init/cloudflare.ts` (zones, tunnel, DNS), `init/state.ts`
-(`.typetorch/init.json`). Backend repo: `server/` gains `install.sh` (the Linux service steps as one idempotent
+`init/ssh.ts` (the session, script upload), `init/state.ts` (`.typetorch/init.json`), and
+`commands/backend.ts` gains `backend run` (the backend plus quick tunnel wrapper). Backend repo: `server/` gains `install.sh` (the Linux service steps as one idempotent
 script the wizard uploads) and `cloudflared.service` notes. Docs: fresh-setup.md and fleet-and-alerts.md point at
 init first.
