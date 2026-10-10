@@ -124,8 +124,8 @@ the env file over SSH or in the local env file. Then `backend setup --url https:
 `typetorch servers` after the user joins the game. An optional last question takes a Discord or Slack webhook URL for
 alerts.
 
-**Explorer exposure.** With a tunnel the admin UI is public on that hostname. The wizard defaults
-`TYPETORCH_TOKEN_LOGIN=off` with Roblox sign-in on, or sets the admin allow list to the user's current address,
+**Explorer exposure.** With a tunnel the admin UI is public on that hostname. The wizard offers
+`TYPETORCH_TOKEN_LOGIN=off` with Roblox sign-in on (the backend default is on), or sets the admin allow list to the user's current address,
 and explains the lockout after five failed logins.
 
 ### Per-run specifics
@@ -186,6 +186,7 @@ do" list current.
 In `cli/src`: `tui.ts`, `commands/init.ts` (the phases), `init/` with one file per phase
 (`preflight.ts`, `project.ts`, `roblox.ts`, `keys.ts`, `kernel.ts`, `backend.ts`, `deploy.ts`, `agent.ts`),
 `init/ssh.ts` (the session, script upload), `init/state.ts` (`.typetorch/init.json`), and
-`commands/backend.ts` gains `backend run` (the backend plus quick tunnel wrapper). Backend repo: `server/` gains `install.sh` (the Linux service steps as one idempotent
-script the wizard uploads) and `cloudflared.service` notes. Docs: fresh-setup.md and fleet-and-alerts.md point at
+`commands/backend.ts` gains `backend run` (the backend plus quick tunnel wrapper). Backend repo: `server/` already has `Caddyfile`, `backend.env.example` and `typetorch-backend.service`. A single
+idempotent `install.sh` for the Linux service steps (the wizard would upload it) and `cloudflared.service` notes are
+planned, not built. Docs: fresh-setup.md and fleet-and-alerts.md point at
 init first.

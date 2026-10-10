@@ -24,8 +24,9 @@ discovery and JWKS from that issuer's `/.well-known/typetorch-login`; no Roblox 
    redirects back to dash.typetorch.dev; dash.typetorch.dev (after a one-time interstitial per project) redirects to the
    backend's callback with a single-use code; the backend redeems the code server to server and gets dash.typetorch.dev's
    assertion plus Roblox's id token, verifies both, and decides the role from its own access list.
-3. Once per device: the owner blesses the browser with `typetorch backend bless` (signed by the prod signing key),
-   the admin token, or a passkey. Blessed device plus central login is full admin; unblessed is `web` or refused.
+3. Once per device: the owner blesses the browser with the admin token (`POST /auth/device`) or with the CLI's signed
+   link (`typetorch backend bless`, signed by the prod signing key; the backend side is built, the CLI command is not
+   yet). A passkey is planned, not built. Blessed device plus central login is full admin; unblessed is `web` or refused.
 
 What this guarantees: dash.typetorch.dev cannot log anyone in on its own, a backend cannot affect another project, and a
 full compromise of dash.typetorch.dev yields a list of users and projects, an outage of this one login method, and at
@@ -172,14 +173,15 @@ Everything else is removed, and the live hijack is made loud and nearly worthles
    login on that device is **full admin, with write access**. A hijacked login lands on the operator's device, which
    was never blessed, so it gets `web` or is refused (`TYPETORCH_CENTRAL_LOGIN_UNBLESSED=web|refuse`). Ways to
    bless, any one of them:
-   - **A signed link from the CLI** (preferred): `typetorch backend bless` fetches a one-time challenge from the
+   - **A signed link from the CLI** (preferred; the backend side is built, the `typetorch backend bless` command is
+     not built yet): `typetorch backend bless` fetches a one-time challenge from the
      backend, signs it with the game's prod signing key (the root of trust in TypeTorch, on the owner's PC), and
      opens `<backend>/auth/bless?...` in the browser. The backend verifies the signature against the public keys in
      its signed settings record and sets the cookie. Nothing is typed, nothing passes through dash.typetorch.dev, and
      only a holder of the signing key can do it.
    - **The admin token** entered once on that device (`POST /auth/device`).
    - **A passkey** registered at the backend (WebAuthn; static-URL installs only, since the relying party id is the
-     host).
+     host). Planned, not built.
    Why this is the only shape that works: the backend must demand something the operator's browser cannot present,
    and Roblox's id token carries nothing from the person's browser except the nonce, which the broker chooses. So
    the extra factor has to arrive by a channel outside the browser flow. The signing key already is one.
@@ -218,7 +220,8 @@ players. The Roblox OAuth app asks for `openid profile` only.
   line, in `/healthz` for admins, in `doctor` and at the end of `typetorch init`.
 - The report: `POST <issuer>/report` on start, after every `backend setup` (the quick-tunnel wrapper), and daily;
   signed with the instance key; failures logged once an hour, never fatal.
-- New env `TYPETORCH_CENTRAL_LOGIN`: `on` (default when `TYPETORCH_PUBLIC_URL` is set), `off` removes the button,
+- New env `TYPETORCH_CENTRAL_LOGIN`: `on` (off by default; set it explicitly, and it needs an https
+  `TYPETORCH_PUBLIC_URL`, otherwise central login stays off with a warning), `off` removes the button,
   refuses the callback and sends no reports. `TYPETORCH_CENTRAL_LOGIN_ISSUER` defaults to `https://dash.typetorch.dev`
   (for a self-hosted broker or tests). `TYPETORCH_CENTRAL_LOGIN_UNBLESSED`: `web` (default) or `refuse`, the role
   of an owner on a device that was never blessed.
@@ -230,7 +233,7 @@ players. The Roblox OAuth app asks for `openid profile` only.
 - Routes: `GET /auth/typetorch/start` (step 2), `GET /auth/typetorch/callback` (steps 5 to 8),
   `POST /auth/device` (the admin token once, sets the device cookie), `GET /auth/bless/challenge` and
   `GET /auth/bless` (the CLI's signed link), `GET /api/typetorch/challenge/<token>` (the origin challenge, answers
-  only while a report is pending), and on static-URL installs the passkey register and assert routes. The Settings
+  only while a report is pending). The passkey register and assert routes are planned, not built. The Settings
   page lists blessed devices with a revoke button. All login routes are rate limited like the token login and
   counted toward the five-failure lockout.
 - The explorer's login page shows three ways when they are enabled: the admin token, Sign in with Roblox (per game),
@@ -271,8 +274,8 @@ The property each line protects, so a reviewer can tick them:
   instance key, never with a URL or the request's Host header.
 - **dash.typetorch.dev cannot log anyone in on its own.** Roblox's id token with the backend's nonce is required, and
   dash.typetorch.dev cannot sign as Roblox.
-- **dash.typetorch.dev's operator can never become admin.** Admin needs a device blessed by the signing key, the admin
-  token or a passkey, none of which pass through dash.typetorch.dev.
+- **dash.typetorch.dev's operator can never become admin.** Admin needs a device blessed by the signing key or the admin
+  token (a passkey is planned), none of which pass through dash.typetorch.dev.
 - **Nobody can repoint a project at a phishing origin.** The current origin only changes on a report signed by the
   instance key and confirmed by the challenge served from that origin.
 - **A link cannot log a victim into an attacker's account.** The flow starts at the backend with `state` in a cookie
