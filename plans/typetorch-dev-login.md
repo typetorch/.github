@@ -11,7 +11,8 @@ The broker itself is built in the repository `typetorch/dash` from `plans/dash-a
 the exact JSON of `/report` (canonical JSON `{fingerprint, origin, label, iat}` signed by the instance key, the
 202 challenge answer, the hour-long bearer token), `/authorize`, `/token` and the JWKS. Build to those shapes.
 For an end-to-end test, run dash locally (`bun run dev` and `bun run fake-roblox` in its repo) and point the
-backend at it with `TYPETORCH_CENTRAL_LOGIN_ISSUER=http://127.0.0.1:8788` and the fake's client id and JWKS.
+backend at it with `TYPETORCH_CENTRAL_LOGIN_ISSUER=http://127.0.0.1:8788`. The backend reads the fake's client id,
+discovery and JWKS from that issuer's `/.well-known/typetorch-login`; no Roblox settings go on the backend.
 
 ## Summary of the flow
 
@@ -139,8 +140,9 @@ Relying-party initiated, authorization code with PKCE, no client secret. The bac
    two minutes old, and `jti` was not seen before (a small in-memory set with expiry).
 
    **Then it verifies Roblox's own token**, so that dash.typetorch.dev alone can never produce a login: the
-   `roblox_id_token` signature against Roblox's published keys (its OIDC discovery document, cached), `iss` is
-   Roblox, `aud` is TypeTorch's Roblox client id (a public constant in the backend, overridable by env), `nonce`
+   `roblox_id_token` signature against Roblox's published keys (the discovery document named by the broker's
+   `/.well-known/typetorch-login`, cached), `iss` is Roblox, `aud` is the `roblox_client_id` from that same
+   metadata (if a pin is set in "Backend changes", it must match that value), `nonce`
    equals the cookie's nonce, `sub` equals the assertion's `sub`, and it is unexpired. Either check failing is "not
    signed in". A failed response from `/token` is treated the same; the response body is never shown to the person.
 8. The backend maps `sub` to a role with the same code path as per-game Roblox sign-in today: an owner from the
@@ -220,7 +222,11 @@ players. The Roblox OAuth app asks for `openid profile` only.
   refuses the callback and sends no reports. `TYPETORCH_CENTRAL_LOGIN_ISSUER` defaults to `https://dash.typetorch.dev`
   (for a self-hosted broker or tests). `TYPETORCH_CENTRAL_LOGIN_UNBLESSED`: `web` (default) or `refuse`, the role
   of an owner on a device that was never blessed.
-  `TYPETORCH_ROBLOX_BROKER_CLIENT_ID`: TypeTorch's Roblox client id, a built-in constant, overridable for tests.
+- The broker's Roblox settings come from `GET <issuer>/.well-known/typetorch-login` (`roblox_client_id`,
+  `roblox_discovery`), fetched and cached like the JWKS. The backend has no built-in Roblox client id.
+  `TYPETORCH_ROBLOX_BROKER_CLIENT_ID` and `TYPETORCH_ROBLOX_BROKER_DISCOVERY` are optional pins. If set, they win:
+  a fetched value that differs refuses central logins. If the metadata cannot be fetched, central logins fail
+  closed (the login fails with the same "not signed in" page; the admin token and per-game Roblox sign-in still work).
 - Routes: `GET /auth/typetorch/start` (step 2), `GET /auth/typetorch/callback` (steps 5 to 8),
   `POST /auth/device` (the admin token once, sets the device cookie), `GET /auth/bless/challenge` and
   `GET /auth/bless` (the CLI's signed link), `GET /api/typetorch/challenge/<token>` (the origin challenge, answers
@@ -237,7 +243,9 @@ players. The Roblox OAuth app asks for `openid profile` only.
   owner, for a viewer, for a stranger; a reused code; a wrong `state`; a wrong `nonce`; an `aud` for another origin;
   an expired assertion; an unknown `kid`; a pinned `kid` mismatch; the switch set to `off`; a Roblox id token with
   the wrong nonce, the wrong `aud`, a bad signature or a `sub` that differs from the assertion; an owner getting
-  `web` without a device cookie and admin with one; the report's signature and `iat` window.
+  `web` without a device cookie and admin with one; the report's signature and `iat` window; the metadata fetch
+  (a set pin that differs from the fetched client id or discovery refuses the login; a failed metadata fetch fails
+  the login closed).
 
 ## dash.typetorch.dev endpoints
 
