@@ -7,6 +7,11 @@ Status: spec, agreed 2026-10-10. For the backend agent and for whoever builds ty
 `main`. Keep every change behind `TYPETORCH_CENTRAL_LOGIN` (off by default on this branch until the trial is
 reviewed), add the tests listed under "Backend changes", and leave the admin token and per-game Roblox sign-in
 untouched. Use a fake issuer in tests; do not call a real typetorch.dev. Report what you could not verify.
+The broker itself is built in the repository `typetorch/dash` from `plans/dash-agent-prompt.md`; that file fixes
+the exact JSON of `/report` (canonical JSON `{fingerprint, origin, label, iat}` signed by the instance key, the
+202 challenge answer, the hour-long bearer token), `/authorize`, `/token` and the JWKS. Build to those shapes.
+For an end-to-end test, run dash locally (`bun run dev` and `bun run fake-roblox` in its repo) and point the
+backend at it with `TYPETORCH_CENTRAL_LOGIN_ISSUER=http://127.0.0.1:8788` and the fake's client id and JWKS.
 
 ## Summary of the flow
 
