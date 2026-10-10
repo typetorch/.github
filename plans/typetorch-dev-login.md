@@ -1,7 +1,29 @@
 # typetorch.dev login: one Roblox sign-in for every backend
 
-Status: spec, 2026-10-10. For the backend agent and for whoever builds typetorch.dev. The host name below is
+Status: spec, agreed 2026-10-10. For the backend agent and for whoever builds typetorch.dev. The host name below is
 `typetorch.dev` throughout; if the service ends up on typetorch.app, replace the name, nothing else changes.
+
+**For the backend agent.** This is a trial first. Work on the branch `central-oauth` of the backend repo, never on
+`main`. Keep every change behind `TYPETORCH_CENTRAL_LOGIN` (off by default on this branch until the trial is
+reviewed), add the tests listed under "Backend changes", and leave the admin token and per-game Roblox sign-in
+untouched. Use a fake issuer in tests; do not call a real typetorch.dev. Report what you could not verify.
+
+## Summary of the flow
+
+1. Once per project: on typetorch.dev the owner signs in with Roblox, clicks Add project and pastes the fingerprint
+   that `typetorch init` printed. The backend has reported its origin and passed the challenge, so the entry links
+   to it.
+2. Every login: the project link opens the backend's `/auth/typetorch/start`, which makes `state`, `nonce` and a
+   PKCE verifier and redirects to typetorch.dev; typetorch.dev redirects to Roblox with the backend's nonce; Roblox
+   redirects back to typetorch.dev; typetorch.dev (after a one-time interstitial per project) redirects to the
+   backend's callback with a single-use code; the backend redeems the code server to server and gets typetorch.dev's
+   assertion plus Roblox's id token, verifies both, and decides the role from its own access list.
+3. Once per device: the owner blesses the browser with `typetorch backend bless` (signed by the prod signing key),
+   the admin token, or a passkey. Blessed device plus central login is full admin; unblessed is `web` or refused.
+
+What this guarantees: typetorch.dev cannot log anyone in on its own, a backend cannot affect another project, and a
+full compromise of typetorch.dev yields a list of users and projects, an outage of this one login method, and at
+worst a read-only foothold during a victim's live login. It cannot reach admin, deploys or game data.
 
 ## Goal
 
