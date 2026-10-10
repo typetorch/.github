@@ -134,10 +134,17 @@ and explains the lockout after five failed logins.
   `/opt/typetorch-backend`, `bun install` and the explorer build, `/etc/typetorch/backend.env` with mode 640, the
   unit, then Caddy for the domain or the sslip.io name per Q3, then `GET /healthz` through the public URL. One checklist line per step.
   Idempotent: a rerun skips what exists. `--teardown` reverses it.
-- **Coolify:** "Is Coolify installed?" No: run its install script, tell the user to open the panel and set the admin
-  account. Then print the exact resource settings (Docker Compose, repo URL, compose location, domain) and the env
-  block, wait for Enter, probe `/healthz` and both keys. Coolify is clicked by the user; the wizard prepares and
-  verifies. Coolify needs a hostname for the app: the user's domain, or the sslip.io name.
+- **Coolify:** the wizard detects Coolify itself, no question asked: over SSH or locally it looks for
+  `/data/coolify`, the `coolify` and `coolify-proxy` containers, and the panel answering on port 8000. Found: skip
+  straight to adding the project. Not found: run Coolify's install script, print the panel address and wait for the
+  user to set the admin account. Adding the project then has two ways:
+  - **Clicked** (default): the wizard prints the exact resource settings (Docker Compose from the backend repo URL,
+    compose location `/compose.yaml`, the hostname: the user's domain or the sslip.io name) and the env block with
+    the two keys, waits for Enter, then probes `/healthz` and both keys.
+  - **Automated** (optional, when the user pastes a Coolify API token from the panel): the wizard creates the
+    project, the Docker Compose resource, the domain and the env variables through Coolify's API and starts the
+    deploy, then runs the same probes. Skipped silently when no token is given.
+  A rerun on a VPS that already has the resource finds it by name and only re-checks it.
 - **This PC:** install Bun and cloudflared if missing, clone the backend next to the game, build the explorer,
   write a local env file, register `typetorch backend run` as a login task. No exposure question.
 
