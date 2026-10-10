@@ -3,9 +3,9 @@
 Status: spec, agreed 2026-10-10. For the backend agent and for whoever builds dash.typetorch.dev. The broker is served
 at `https://dash.typetorch.dev`; the product is typetorch.dev.
 
-**For the backend agent.** This is a trial first. Work on the branch `central-oauth` of the backend repo, never on
-`main`. Keep every change behind `TYPETORCH_CENTRAL_LOGIN` (off by default on this branch until the trial is
-reviewed), add the tests listed under "Backend changes", and leave the admin token and per-game Roblox sign-in
+**For the backend agent.** This started as a trial on the backend branch `central-oauth`; it is merged into `main`
+(bfb4a54). Keep every change behind `TYPETORCH_CENTRAL_LOGIN` (now **on by default**: it needs an https
+`TYPETORCH_PUBLIC_URL`, and `off` disables it), add the tests listed under "Backend changes", and leave the admin token and per-game Roblox sign-in
 untouched. Use a fake issuer in tests; do not call a real dash.typetorch.dev. Report what you could not verify.
 The broker itself is built in the repository `typetorch/dash` from `plans/dash-agent-prompt.md`; that file fixes
 the exact JSON of `/report` (canonical JSON `{fingerprint, origin, label, iat}` signed by the instance key, the
@@ -220,9 +220,9 @@ players. The Roblox OAuth app asks for `openid profile` only.
   line, in `/healthz` for admins, in `doctor` and at the end of `typetorch init`.
 - The report: `POST <issuer>/report` on start, after every `backend setup` (the quick-tunnel wrapper), and daily;
   signed with the instance key; failures logged once an hour, never fatal.
-- New env `TYPETORCH_CENTRAL_LOGIN`: `on` (off by default; set it explicitly, and it needs an https
-  `TYPETORCH_PUBLIC_URL`, otherwise central login stays off with a warning), `off` removes the button,
-  refuses the callback and sends no reports. `TYPETORCH_CENTRAL_LOGIN_ISSUER` defaults to `https://dash.typetorch.dev`
+- New env `TYPETORCH_CENTRAL_LOGIN`: on by default (unset or `on`); it needs an https `TYPETORCH_PUBLIC_URL`
+  (plain http on loopback only), otherwise central login stays off with a warning and the backend starts as usual.
+  `off` disables it: no button, no TypeTorch Dashboard link, the callback is refused and no reports are sent. `TYPETORCH_CENTRAL_LOGIN_ISSUER` defaults to `https://dash.typetorch.dev`
   (for a self-hosted broker or tests). `TYPETORCH_CENTRAL_LOGIN_UNBLESSED`: `web` (default) or `refuse`, the role
   of an owner on a device that was never blessed.
 - The broker's Roblox settings come from `GET <issuer>/.well-known/typetorch-login` (`roblox_client_id`,
