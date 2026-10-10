@@ -30,11 +30,19 @@ A backend's identity on typetorch.dev is the fingerprint of its instance key, pr
 - `typetorch init` prints the fingerprint at the end of the backend phase, and `typetorch doctor` shows it. On
   typetorch.dev the person clicks **Add project**, pastes it and gives it a label. The entry exists before the
   backend was ever reached.
-- **The backend reports its origin.** On every start, every tunnel URL change and once a day, it POSTs
-  `https://typetorch.dev/report` with `{ "fingerprint", "origin", "label", "iat" }` and a signature over that JSON by
-  the instance key, plus the public key. typetorch.dev verifies the signature, checks `iat` is within five minutes,
-  and stores the origin as the project's current address. A report with a bad signature is dropped and counted.
-  The quick-tunnel wrapper (`typetorch backend run`) triggers the report after each `backend setup`.
+- **The backend reports its origin, and proves it.** On every start, every tunnel URL change and once a day, it
+  POSTs `https://typetorch.dev/report` with `{ "fingerprint", "origin", "label", "iat" }` and a signature over that
+  JSON by the instance key, plus the public key. typetorch.dev verifies the signature and that `iat` is within five
+  minutes. When the origin is new for this project it runs a challenge, in the manner of ACME but on the backend's
+  own API path: it answers `{ "challenge": "<token>" }`, the backend serves the token at
+  `<origin>/api/typetorch/challenge/<token>` for 60 seconds, typetorch.dev fetches it over https (no redirects, 5 s)
+  and compares. Only then is the origin stored as the project's current address. The answer carries a short-lived
+  access token (one hour, bound to the fingerprint) that later reports in that hour may use instead of a signature
+  and challenge; it is derived, never stored by the backend past its life, and never the root of anything. A
+  report with a bad signature or a failed challenge is dropped and counted. The quick-tunnel wrapper
+  (`typetorch backend run`) triggers the report after each `backend setup`.
+- No DNS records, no names under typetorch.dev, no certificates: the project page links to the current origin,
+  which is all a stable bookmark needs.
 - **The assertion's audience is the fingerprint**, and the backend compares it with its own key, so
   `TYPETORCH_PUBLIC_URL` may change freely. typetorch.dev sends the code only to the origin the backend last
   reported, and `redirect_uri` must be on that origin.
@@ -110,8 +118,9 @@ Relying-party initiated, authorization code with PKCE, no client secret. The bac
    signed in". A failed response from `/token` is treated the same; the response body is never shown to the person.
 8. The backend maps `sub` to a role with the same code path as per-game Roblox sign-in today: an owner from the
    access list, a user id in `TYPETORCH_WEB_VIEWERS` as a viewer, anyone else refused with the same page as a wrong
-   token. **A central login is read-only by default**, even for an owner (`TYPETORCH_CENTRAL_LOGIN_ROLE=web`, the
-   default): admin needs a factor the backend owns, see "Trust concentration". It then creates a fresh session
+   token. **Admin needs a blessed device**: an owner on a device that was blessed once (see "Trust concentration")
+   gets full admin; an owner on any other device gets what `TYPETORCH_CENTRAL_LOGIN_UNBLESSED` says, `web`
+   (read-only, the default) or `refuse`. It then creates a fresh session
    (never reuse a pre-login session id), with the same lifetime rules as the other logins, and records
    `login: typetorch.dev` in the audit log.
 
@@ -128,24 +137,32 @@ Everything else is removed, and the live hijack is made loud and nearly worthles
    as Roblox, so it cannot mint a login for anyone at any time. The only thing it could do is redirect a login the
    victim is performing right then, and the victim's own login then fails visibly, which the backend logs as
    `nonce mismatch after typetorch.dev login`.
-2. **A central login is read-only by default.** `TYPETORCH_CENTRAL_LOGIN_ROLE=web` (default) gives the web role to
-   everyone the access list knows, owners included. Admin needs one of the backend's own factors, once per browser:
-   - the admin token entered once, which sets a device cookie (`tt_device`, 180 days, `Secure`, `HttpOnly`, rotated
-     on use) that the next central logins upgrade to admin;
-   - or a passkey registered at the backend (WebAuthn, static-URL installs only, since the relying party id is the
+2. **Admin needs a device blessed by something the broker never sees.** Blessing is done once per browser and
+   sets a device cookie (`tt_device`, 180 days, `Secure`, `HttpOnly`, `SameSite=Lax`, rotated on every use, bound
+   to a server-side record that the owner can list and revoke on the Settings page). From then on every typetorch.dev
+   login on that device is **full admin, with write access**. A hijacked login lands on the operator's device, which
+   was never blessed, so it gets `web` or is refused (`TYPETORCH_CENTRAL_LOGIN_UNBLESSED=web|refuse`). Ways to
+   bless, any one of them:
+   - **A signed link from the CLI** (preferred): `typetorch backend bless` fetches a one-time challenge from the
+     backend, signs it with the game's prod signing key (the root of trust in TypeTorch, on the owner's PC), and
+     opens `<backend>/auth/bless?...` in the browser. The backend verifies the signature against the public keys in
+     its signed settings record and sets the cookie. Nothing is typed, nothing passes through typetorch.dev, and
+     only a holder of the signing key can do it.
+   - **The admin token** entered once on that device (`POST /auth/device`).
+   - **A passkey** registered at the backend (WebAuthn; static-URL installs only, since the relying party id is the
      host).
-   `TYPETORCH_CENTRAL_LOGIN_ROLE=owner` lets typetorch.dev logins become admin directly; the Settings page shows it
-   with the sentence "typetorch.dev could then act as an owner here during one of your logins".
-3. **The blast radius was already small.** A backend admin reads analytics and fleet data, changes the settings page
-   and uses the read-only remote debug. Deploys, rollbacks and access changes need the prod signing keys on the
-   owner's PC, which no backend has. Nothing in this path reaches the game.
+   Why this is the only shape that works: the backend must demand something the operator's browser cannot present,
+   and Roblox's id token carries nothing from the person's browser except the nonce, which the broker chooses. So
+   the extra factor has to arrive by a channel outside the browser flow. The signing key already is one.
+3. **The blast radius of a hijack is a `web` session on an unblessed device**, during a victim's live login, with a
+   failed sign-in on the victim's screen and a line in the log. Deploys, rollbacks and access changes still need the
+   prod signing keys on the owner's PC, which no backend has.
 4. **The rest:** signed assertions, optional `kid` pinning, every central login in the audit log with the provider
    and the role granted, the off switch, and the admin token and per-game Roblox sign-in as paths that never touch
    typetorch.dev.
 
-What this buys: without typetorch.dev's cooperation nobody logs in through it; with its cooperation, the worst case
-is a read-only session on an unblessed device, during a victim's live login, with a failed sign-in on the victim's
-screen and a line in the log. Full isolation stays one setting away.
+What this buys: without typetorch.dev's cooperation nobody logs in through it; with its cooperation, the operator
+can never become admin, because no device of theirs was ever blessed. Full isolation stays one setting away.
 
 ## What typetorch.dev stores
 
@@ -174,11 +191,15 @@ players. The Roblox OAuth app asks for `openid profile` only.
   signed with the instance key; failures logged once an hour, never fatal.
 - New env `TYPETORCH_CENTRAL_LOGIN`: `on` (default when `TYPETORCH_PUBLIC_URL` is set), `off` removes the button,
   refuses the callback and sends no reports. `TYPETORCH_CENTRAL_LOGIN_ISSUER` defaults to `https://typetorch.dev`
-  (for a self-hosted broker or tests). `TYPETORCH_CENTRAL_LOGIN_ROLE`: `web` (default) or `owner`.
+  (for a self-hosted broker or tests). `TYPETORCH_CENTRAL_LOGIN_UNBLESSED`: `web` (default) or `refuse`, the role
+  of an owner on a device that was never blessed.
   `TYPETORCH_ROBLOX_BROKER_CLIENT_ID`: TypeTorch's Roblox client id, a built-in constant, overridable for tests.
 - Routes: `GET /auth/typetorch/start` (step 2), `GET /auth/typetorch/callback` (steps 5 to 8),
-  `POST /auth/device` (the admin token once, sets the device cookie), and on static-URL installs the passkey
-  register and assert routes. All rate limited like the login route and counted toward the five-failure lockout.
+  `POST /auth/device` (the admin token once, sets the device cookie), `GET /auth/bless/challenge` and
+  `GET /auth/bless` (the CLI's signed link), `GET /api/typetorch/challenge/<token>` (the origin challenge, answers
+  only while a report is pending), and on static-URL installs the passkey register and assert routes. The Settings
+  page lists blessed devices with a revoke button. All login routes are rate limited like the token login and
+  counted toward the five-failure lockout.
 - The explorer's login page shows three ways when they are enabled: the admin token, Sign in with Roblox (per game),
   Sign in with typetorch.dev. The Settings page gets a read-only line that says whether the central login is on.
 - Startup never blocks on typetorch.dev. The JWKS is fetched on the first callback and cached; a fetch failure fails
@@ -196,7 +217,7 @@ players. The Roblox OAuth app asks for `openid profile` only.
 | Route | What |
 |---|---|
 | `GET /authorize` | the checks in step 3, the Roblox round trip with the backend's nonce, the interstitial, the redirect with the code |
-| `POST /report` | a backend's signed origin report; verifies the signature and the `iat` window, updates the project |
+| `POST /report` | a backend's signed origin report; verifies the signature and the `iat` window, runs the origin challenge for a new origin, updates the project, returns the hour-long access token |
 | `POST /token` | step 6; answers 400 with a short error code (`invalid_grant`, `invalid_request`) and no detail |
 | `GET /.well-known/jwks.json` | the public keys, `Cache-Control: max-age=3600` |
 | `GET /` | the project list for a signed-in person: **Add project** (paste a fingerprint, give a label), each entry a link to `<current origin>/auth/typetorch/start`, greyed when the last report is older than 30 days; delete per entry; sign out |
@@ -215,10 +236,10 @@ The property each line protects, so a reviewer can tick them:
   instance key, never with a URL or the request's Host header.
 - **typetorch.dev cannot log anyone in on its own.** Roblox's id token with the backend's nonce is required, and
   typetorch.dev cannot sign as Roblox.
-- **typetorch.dev cannot become an owner by default.** Central logins are read-only until a device is blessed with a
-  factor the backend owns.
+- **typetorch.dev's operator can never become admin.** Admin needs a device blessed by the signing key, the admin
+  token or a passkey, none of which pass through typetorch.dev.
 - **Nobody can repoint a project at a phishing origin.** The current origin only changes on a report signed by the
-  instance key.
+  instance key and confirmed by the challenge served from that origin.
 - **A link cannot log a victim into an attacker's account.** The flow starts at the backend with `state` in a cookie
   and `nonce` in the assertion; typetorch.dev never starts a login into a backend by itself.
 - **typetorch.dev cannot grant roles.** It sends only `sub` and names; the backend's access list decides.
@@ -235,7 +256,7 @@ The property each line protects, so a reviewer can tick them:
 ## Accepted limits
 
 - During a person's live login, a malicious typetorch.dev could redirect that one login to a session of its own,
-  as a read-only user on an unblessed device, and the person sees their own login fail. There is no scheme that
+  on an unblessed device, and the person sees their own login fail. There is no scheme that
   removes this while a broker is in the browser flow; per-game Roblox sign-in and the token avoid the broker.
 - A backend that never reports (central login off, or typetorch.dev unreachable) cannot be reached from the project
   list, and its logins through typetorch.dev fail until a report lands.
@@ -245,6 +266,6 @@ The property each line protects, so a reviewer can tick them:
 
 ## Out of scope
 
-Accounts, email, passwords, billing, per-user settings on typetorch.dev, a list of a person's games taken from
+Accounts, email, passwords, billing, DNS names or certificates under typetorch.dev, per-user settings on typetorch.dev, a list of a person's games taken from
 Roblox (the project list comes only from sign-ins that happened), and any API through which typetorch.dev would reach
 into a backend.
