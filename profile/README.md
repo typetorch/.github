@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/typetorch/.github/main/profile/typetorch.svg" width="96" alt="TypeTorch logo">
+
 # TypeTorch
 
 **Update live Roblox games without restarting their servers.**
