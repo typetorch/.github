@@ -9,32 +9,31 @@ version in a few seconds. Players stay in the game and nobody gets kicked to a n
 builders edit models and UI templates in the place, run `typetorch assets sync`, and running servers pick up the new
 versions live. One place serves any number of branches (`prod`, `dev`, `feature-x`), so you can test a branch in a
 private server of the real game instead of keeping a separate testing place. An optional self-hosted backend shows you
-the live servers, each deploy's results, errors, performance and your own analytics, and lets you debug one live server
-from the browser.
+the live servers, each deploy's results, errors, performance and your own analytics, sends experience notifications,
+collects player feedback, runs scheduled live events, and lets you debug one live server from the browser.
 
 > **Status: early.** The core loop works on live Roblox servers today. APIs will change. The packages are on npm
 > (`@typetorch/framework`, `@typetorch/cli`, ...).
 
 ## Get started
 
-**[→ Read the docs: github.com/typetorch/docs](https://github.com/typetorch/docs)**
+**[→ Read the docs: www.typetorch.dev](https://www.typetorch.dev)**
 
-A new game starts from the template. Every package comes from npm, so a clone builds on its own (needs
+A new game starts from the template. `typetorch init` in an empty folder walks you through every step (needs
 [Bun](https://bun.sh) and [Rokit](https://github.com/rojo-rbx/rokit)):
 
 ```sh
-git clone https://github.com/typetorch/template my-game
-cd my-game
-bun install
-rokit install
-bun run typetorch build
+bunx @typetorch/cli init
 ```
 
-- **[Fresh setup](https://github.com/typetorch/docs/blob/main/getting-started/fresh-setup.md):** a new game from the
+The template's package versions are behind npm: after `init`, take the newest `@typetorch/*` packages
+([how](https://www.typetorch.dev/getting-started/fresh-setup#take-the-newest-versions)).
+
+- **[Fresh setup](https://www.typetorch.dev/getting-started/fresh-setup):** a new game from the
   starter template to a live hot-swap.
-- **[Migrate an existing game](https://github.com/typetorch/docs/blob/main/getting-started/migrate.md):** services,
+- **[Migrate an existing game](https://www.typetorch.dev/getting-started/migrate):** services,
   swap safety, networking, data and UI, with before/after code.
-- **[Agent playbook](https://github.com/typetorch/docs/blob/main/agents/AGENTS.md):** tell your coding agent "migrate
+- **[Agent playbook](https://www.typetorch.dev/agents/AGENTS):** tell your coding agent "migrate
   this project to typetorch". For Claude Code: `/plugin marketplace add typetorch/claude-plugin`.
 
 ## Why
@@ -103,7 +102,7 @@ flowchart LR
    - branch switching, rollback and owner tools;
    - a Claude chat that acts on a dev server or edits and redeploys a dev branch, with your approval.
 
-   Production servers are read-only.
+   The editing tools work only where dev rules apply; on a normal public server they are read-only.
 8. **Backend (optional, self-hosted).** One server, one Docker image, two keys. It holds:
    - the **fleet API**: every server's heartbeat (players, TPS, memory), deploy reports, alerts and a closing notice,
      sent by the kernel itself (`typetorch servers`, `report`, `alerts`; Discord, Slack or JSON webhooks);
@@ -112,26 +111,34 @@ flowchart LR
      Rows carry the artifact and branch, a random player id (never the UserId) and no chat or typed text. Stored in
      DuckDB on a small VPS or in Cloudflare Basin;
    - **error logs** from game servers, counted per minute, with names and ids already replaced;
-   - the **web explorer**: Overview, Roblox benchmarks, Retention, Funnels, Players and player timelines, Flow graphs,
-     Experiments, First session, Events, Fleet, Errors, Performance (client FPS, memory and ping; server TPS and
-     memory, at p10 to p99, with deploy marks on every chart and a before/after compare) and Settings. Sign in with
-     the admin token or with Roblox;
-   - **remote debug** (kernel 0.5): open any live server in the explorer and read its status, logs, players, module
-     state, a read-only Dex, builds, boot budget, error and network counters. The server pulls commands, nothing can
-     be changed through it, and an idle server makes no extra requests.
+   - **experience notifications**: your game says why a player should hear from it, the backend decides when, sends
+     through Open Cloud and tracks the funnel from send to tap;
+   - **player feedback** (`TypeTorch.feedback()`) and **live events** ("double cash this weekend", signed once and
+     switched on by every server on time, with a lift report afterwards);
+   - the **web explorer**: Overview, Players and player timelines, Funnels, Flow graphs, Retention and LTV,
+     Demographics, Notifications, Feedback, First session, Recordings and Maps (first sessions replayed on each map's
+     real geometry), Economy, Monetization, Live events, Experiments, Roblox benchmarks, Fleet, Live map, Deploys,
+     Errors, Performance (client FPS, memory and ping; server TPS and memory, at p10 to p99, with deploy marks on every
+     chart and a before/after compare), Query, and the owners' Settings, Backend stats and Audit log. Sign in with the
+     admin token, with Roblox, or with typetorch.dev;
+   - **remote and live debug** (kernel 0.5+): open any live server in the explorer and read its status, logs, players,
+     module state, a read-only Dex, builds, boot budget, error and network counters, a live map of its players, and the
+     read-only commands, streams and Fleet columns your game declares (kernel 0.5.7, framework 0.7.1). The server pulls
+     commands while someone watches, and an idle server makes no extra requests.
 
 ## Repositories
 
 | Repository | Package | What it is |
 |---|---|---|
-| [**docs**](https://github.com/typetorch/docs) | | Getting started, migration, guides and the agent playbook |
-| [**kernel**](https://github.com/typetorch/kernel) | `@typetorch/kernel` | The Luau loader baked into the place: boot within a 15 s budget, branch selection, signature checks, artifact loading, hot swaps with a health window and automatic rollback, the signed settings record, cross-server messaging, the stable remotes, the `/tt` chat commands, heartbeats and reports to the backend, and the read-only remote debug poll |
-| [**framework**](https://github.com/typetorch/framework) | `@typetorch/framework` | The roblox-ts framework your game is written with: modules with dependency injection and lifecycle hooks, troves, guarded networking, state that survives swaps, hot assets, the analytics engine, UI helpers, a Flamework compatibility layer and the in-game dev menu. Ships inside every artifact |
-| [**cli**](https://github.com/typetorch/cli) | `@typetorch/cli` | The `typetorch` command (Node 20+ or Bun): `build`, `deploy`, `test`, `approve`, `promote`, `rollback`, `pin`, `deployments`, `assets sync`, `servers`, `report`, `alerts`, `backend setup`, `settings`, `access`, `keys`, `kernel deploy` and `restore`, `backup refresh`, `migrate --from flamework`, `doctor`, `update` |
+| [**docs**](https://github.com/typetorch/docs) | | Getting started, migration, guides and the agent playbook, published at [www.typetorch.dev](https://www.typetorch.dev) |
+| [**kernel**](https://github.com/typetorch/kernel) | `@typetorch/kernel` | The Luau loader baked into the place: boot within a 15 s budget, branch selection, signature checks, artifact loading, hot swaps with a health window and automatic rollback, the signed settings record, cross-server messaging, the stable remotes, the `/tt` chat commands, heartbeats and reports to the backend, error logs, debug bundles, and the remote and live debug poll |
+| [**framework**](https://github.com/typetorch/framework) | `@typetorch/framework` | The roblox-ts framework your game is written with: modules with dependency injection and lifecycle hooks, troves, guarded networking, state that survives swaps, hot assets, the analytics engine, notifications, feedback, live events, UI helpers, a Flamework compatibility layer and the in-game dev menu. Ships inside every artifact |
+| [**cli**](https://github.com/typetorch/cli) | `@typetorch/cli` | The `typetorch` command, alias `tt` (Node 20+ or Bun): `init`, `build`, `deploy`, `test`, `approve`, `promote`, `rollback`, `pin`, `deployments`, `branch`, `assets sync`, `servers`, `report`, `alerts`, `backend setup` and `run`, `settings`, `access`, `experiment`, `notify`, `keys`, `kernel deploy` and `restore`, `backup refresh`, `serve` and `studio` (the Studio loop), `mcp`, `migrate --from flamework`, `doctor`, `update` |
 | [**transformer**](https://github.com/typetorch/transformer) | `@typetorch/transformer` | The roblox-ts compiler plugin that generates runtime type guards and dependency-injection metadata from your types. A stripped-down fork of [rbxts-transformer-flamework](https://github.com/rbxts-flamework/transformer) (MIT); TypeTorch games don't need Flamework |
-| [**template**](https://github.com/typetorch/template) | | A starter game (Target Rush) showing every feature: services, controllers, networking, state that survives swaps, the runtime API and the dev menu |
-| [**dev-server**](https://github.com/typetorch/dev-server) | `@typetorch/dev-server` | `remote-claude`: a local server behind a temporary Cloudflare tunnel that lets allowlisted developers chat with Claude Code from inside a dev-branch game server. Claude acts on the server or edits the branch; you approve each deploy |
-| [**backend**](https://github.com/typetorch/backend) | `@typetorch/backend` | The self-hosted backend: the fleet API (SQLite), analytics (DuckDB or Cloudflare Basin), error logs, remote debug and the web explorer, as one Docker image (not on npm yet) |
+| [**template**](https://github.com/typetorch/template) | | A starter game (Target Rush) showing services, controllers, networking, state that survives swaps, the runtime API and the dev menu |
+| [**dev-server**](https://github.com/typetorch/dev-server) | `@typetorch/dev-server` | `remote-claude`: a local server behind a temporary Cloudflare tunnel that lets allowlisted developers chat with Claude Code from inside a dev-branch game server, or from Studio through `typetorch serve --claude`. Claude acts on the server or edits the branch; you approve each deploy |
+| [**studio-plugin**](https://github.com/typetorch/studio-plugin) | | The TypeTorch Studio plugin (`TypeTorchSync.rbxm` on GitHub releases): attaches Studio to `typetorch serve`, reloads a running playtest on save, publishes hot assets from a panel, and has a Claude tab |
+| [**backend**](https://github.com/typetorch/backend) | | The self-hosted backend: the fleet API (SQLite), analytics (DuckDB or Cloudflare Basin), error logs, remote and live debug, notifications, feedback, live events and the web explorer, from a checkout or one Docker image (not on npm) |
 | [**claude-plugin**](https://github.com/typetorch/claude-plugin) | | A Claude Code plugin marketplace with the `typetorch-migrate` skill |
 
 ## A taste
@@ -183,11 +190,12 @@ typetorch report latest            # what every server did with the last deploy
 - **Everything is identified by git.** Artifact ids, payload attributes and deployment logs all carry the commit, so
   any build on any server can be traced back to source.
 - **Production is locked down.** Public servers run `prod` and take only updates you signed, editing tools only work
-  on dev-channel branches, and every permission is checked on the server.
+  where dev rules apply, and every permission is checked on the server.
 - **Clean up everything.** Each module's trove owns what it creates, and a swap stops every thread and connection the
   old version started (tested over 180 consecutive swaps).
-- **No GitHub Actions.** TypeTorch never uses hosted CI (a common supply-chain risk). Builds, tests and deploys run on
-  your own machine, where your keys stay.
+- **No CI for your game.** Your game never builds or deploys in hosted CI (a common supply-chain risk). Builds, cloud
+  tests, signing and deploys run on your own machine, where your keys stay. (TypeTorch's own npm packages are released
+  from version tags by a GitHub workflow with npm trusted publishing.)
 
 ## License
 
